@@ -223,6 +223,39 @@ static void test_short_frame_ignored(void)
         TEST_ASSERT_EQUAL_INT(-1, modbus_handle_frame(rq, l, rs, sizeof rs, &H));
 }
 
+static void test_address_wrap_refused(void)
+{
+    uint8_t rq[16] = {1, 0x10, 0xFF, 0xFF, 0, 2, 4, 0, 1, 0, 2}, rs[32];
+    size_t n = seal(rq, 11);
+    int r = modbus_handle_frame(rq, n, rs, sizeof rs, &H);
+    const uint8_t b[] = {1, 0x90, 2};
+    TEST_ASSERT_GREATER_THAN_INT(0, r);
+    expect_frame(b, sizeof b, rs, (size_t)r);
+    uint8_t rd[8] = {1, 3, 0xFF, 0xFF, 0, 2};
+    n = seal(rd, 6);
+    r = modbus_handle_frame(rd, n, rs, sizeof rs, &H);
+    const uint8_t b2[] = {1, 0x83, 2};
+    TEST_ASSERT_GREATER_THAN_INT(0, r);
+    expect_frame(b2, sizeof b2, rs, (size_t)r);
+    TEST_ASSERT_EQUAL_INT(0, call_count);
+}
+
+static void test_write_small_cap_no_write(void)
+{
+    uint8_t rq[8] = {1, 6, 1, 0, 0x02, 0x26}, rs[6];
+    size_t n = seal(rq, 6);
+    int r = modbus_handle_frame(rq, n, rs, 6, &H);
+    const uint8_t b[] = {1, 0x86, 3};
+    TEST_ASSERT_GREATER_THAN_INT(0, r);
+    expect_frame(b, sizeof b, rs, (size_t)r);
+    TEST_ASSERT_EQUAL_INT(0, write_count);
+    uint8_t rq10[16] = {1, 0x10, 1, 0, 0, 1, 2, 0, 5};
+    n = seal(rq10, 9);
+    r = modbus_handle_frame(rq10, n, rs, 4, &H);
+    TEST_ASSERT_EQUAL_INT(-1, r);
+    TEST_ASSERT_EQUAL_INT(0, write_count);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -242,5 +275,7 @@ int main(void)
     RUN_TEST(test_bad_crc_ignored);
     RUN_TEST(test_leading_noise_ignored);
     RUN_TEST(test_short_frame_ignored);
+    RUN_TEST(test_address_wrap_refused);
+    RUN_TEST(test_write_small_cap_no_write);
     return UNITY_END();
 }

@@ -73,6 +73,9 @@ int modbus_handle_frame(const uint8_t *req, size_t req_len,
         if (qty == 0U || qty > MAX_READ_QTY || (size_t)qty * 2U + 5U > resp_cap) {
             return exception_reply(resp, resp_cap, fc, MODBUS_EX_ILLEGAL_VALUE);
         }
+        if ((uint32_t)addr + qty > 0x10000U) {
+            return exception_reply(resp, resp_cap, fc, MODBUS_EX_ILLEGAL_ADDRESS);
+        }
         uint8_t (*rd)(void *, uint16_t, uint16_t *) =
             (fc == FC_READ_INPUT) ? h->read_input : h->read_holding;
         if (rd == NULL) {
@@ -99,12 +102,12 @@ int modbus_handle_frame(const uint8_t *req, size_t req_len,
         if (h->write_holding == NULL) {
             return exception_reply(resp, resp_cap, fc, MODBUS_EX_ILLEGAL_FUNCTION);
         }
+        if (resp_cap < 8U) {
+            return exception_reply(resp, resp_cap, fc, MODBUS_EX_ILLEGAL_VALUE);
+        }
         uint8_t ex = h->write_holding(h->ctx, be16(&req[2]), be16(&req[4]));
         if (ex != 0U) {
             return exception_reply(resp, resp_cap, fc, ex);
-        }
-        if (resp_cap < 8U) {
-            return -1;
         }
         for (size_t i = 0; i < 6U; i++) {
             resp[i] = req[i];
@@ -123,14 +126,17 @@ int modbus_handle_frame(const uint8_t *req, size_t req_len,
         if (h->write_holding == NULL) {
             return exception_reply(resp, resp_cap, fc, MODBUS_EX_ILLEGAL_FUNCTION);
         }
+        if ((uint32_t)addr + qty > 0x10000U) {
+            return exception_reply(resp, resp_cap, fc, MODBUS_EX_ILLEGAL_ADDRESS);
+        }
+        if (resp_cap < 8U) {
+            return exception_reply(resp, resp_cap, fc, MODBUS_EX_ILLEGAL_VALUE);
+        }
         for (uint16_t i = 0; i < qty; i++) {
             uint8_t ex = h->write_holding(h->ctx, (uint16_t)(addr + i), be16(&req[7U + 2U * i]));
             if (ex != 0U) {
                 return exception_reply(resp, resp_cap, fc, ex);   /* earlier writes stay applied */
             }
-        }
-        if (resp_cap < 8U) {
-            return -1;
         }
         for (size_t i = 0; i < 6U; i++) {
             resp[i] = req[i];

@@ -20,7 +20,10 @@ typedef struct {
 
 uint16_t modbus_crc16(const uint8_t *data, size_t len);
 
-/* -1: ignore (too short, bad CRC, other address); else reply length written to resp. */
+/* Returns -1 (no reply, no handler called) when the frame is shorter than 4 bytes,
+ * the CRC is bad, or the address is not MODBUS_SLAVE_ADDR (broadcast included).
+ * Also -1 when resp_cap < 5, too small even for an exception reply.
+ * Otherwise returns the reply length written to resp. */
 int modbus_handle_frame(const uint8_t *req, size_t req_len,
                         uint8_t *resp, size_t resp_cap, const ModbusHandlers *h);
 
