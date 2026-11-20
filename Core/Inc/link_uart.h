@@ -18,7 +18,11 @@ void link_uart_init(void);
  * and its length to *len. */
 bool link_uart_take_frame(uint8_t *buf, size_t *len);
 
-/* Blocking: returns once the last stop bit has left the wire (TC). */
+/* Drop any pending or partial frame (a partial one is discarded up to its RTO). */
+void link_uart_flush(void);
+
+/* Blocking: returns once the last stop bit has left the wire (TC). The
+ * receiver is off meanwhile, so our own reply is never received back. */
 void link_uart_send(const uint8_t *buf, size_t len);
 
 /* Called from USART1_IRQHandler. */

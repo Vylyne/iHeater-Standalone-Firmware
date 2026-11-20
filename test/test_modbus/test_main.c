@@ -256,6 +256,35 @@ static void test_write_small_cap_no_write(void)
     TEST_ASSERT_EQUAL_INT(0, write_count);
 }
 
+static void test_frame_is_ours_rule(void)
+{
+    uint8_t rq[8] = {1, 4, 0, 9, 0, 2};
+    size_t n = seal(rq, 6);
+    TEST_ASSERT_TRUE(modbus_frame_is_ours(rq, n));
+    for (size_t l = 0; l <= 3; l++) TEST_ASSERT_FALSE(modbus_frame_is_ours(rq, l));
+    rq[n - 1] ^= 0xFFU;
+    TEST_ASSERT_FALSE(modbus_frame_is_ours(rq, n));                 /* bad CRC */
+    for (uint8_t a = 0; a < 3; a += 2) {
+        uint8_t o[8] = {a, 4, 0, 9, 0, 2};
+        TEST_ASSERT_FALSE(modbus_frame_is_ours(o, seal(o, 6)));     /* broadcast, other slave */
+    }
+}
+
+static void test_exception_coded_frame_ignored(void)
+{
+    /* Our own exception reply echoed back: valid CRC and address, fc | 0x80. */
+    uint8_t echo[8] = {1, 0x84, 2}, rs[32];
+    size_t n = seal(echo, 3);
+    TEST_ASSERT_FALSE(modbus_frame_is_ours(echo, n));
+    TEST_ASSERT_EQUAL_INT(-1, modbus_handle_frame(echo, n, rs, sizeof rs, &H));
+    /* Request-shaped body with a 0x80 code, e.g. 0x83 = 0x03 | 0x80. */
+    uint8_t rq[8] = {1, 0x83, 0, 0, 0, 1};
+    n = seal(rq, 6);
+    TEST_ASSERT_FALSE(modbus_frame_is_ours(rq, n));
+    TEST_ASSERT_EQUAL_INT(-1, modbus_handle_frame(rq, n, rs, sizeof rs, &H));
+    TEST_ASSERT_EQUAL_INT(0, call_count);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -277,5 +306,7 @@ int main(void)
     RUN_TEST(test_short_frame_ignored);
     RUN_TEST(test_address_wrap_refused);
     RUN_TEST(test_write_small_cap_no_write);
+    RUN_TEST(test_frame_is_ours_rule);
+    RUN_TEST(test_exception_coded_frame_ignored);
     return UNITY_END();
 }

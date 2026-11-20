@@ -21,8 +21,9 @@ float LinkApp_AirTarget(void);
 /* True while the link is in hold (silent for LINK_SILENCE_MS, not yet expired). */
 bool LinkApp_InHold(void);
 
-/* True once a valid frame for this slave has arrived since boot. */
-bool LinkApp_LinkSeen(void);
+/* True once a valid frame has arrived, until a hold expires; the next valid
+ * frame makes it true again. False means "waiting for the link". */
+bool LinkApp_LinkUp(void);
 
 /* HAL tick of the last answered frame, for the LED3 frame flash. */
 uint32_t LinkApp_LastFrameTick(void);

@@ -3,6 +3,7 @@
 
 /* Modbus RTU slave core. Pure C, no HAL: frame in, reply out. */
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -20,9 +21,14 @@ typedef struct {
 
 uint16_t modbus_crc16(const uint8_t *data, size_t len);
 
-/* Returns -1 (no reply, no handler called) when the frame is shorter than 4 bytes,
- * the CRC is bad, or the address is not MODBUS_SLAVE_ADDR (broadcast included).
- * Also -1 when resp_cap < 5, too small even for an exception reply.
+/* The one acceptance rule: at least 4 bytes, good CRC, address MODBUS_SLAVE_ADDR
+ * (broadcast excluded), and a function code without bit 0x80. A master never
+ * sends 0x80 codes; they are our own exception replies echoed back. Only frames
+ * that pass count as link activity. */
+bool modbus_frame_is_ours(const uint8_t *req, size_t req_len);
+
+/* Returns -1 (no reply, no handler called) when modbus_frame_is_ours() fails,
+ * or when resp_cap < 5, too small even for an exception reply.
  * Otherwise returns the reply length written to resp. */
 int modbus_handle_frame(const uint8_t *req, size_t req_len,
                         uint8_t *resp, size_t resp_cap, const ModbusHandlers *h);

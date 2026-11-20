@@ -37,22 +37,6 @@ static const ModbusHandlers s_handlers = {
     &s_regs,
 };
 
-/* The test modbus_handle_frame applies before it answers: long enough, good
- * CRC, our address. Done first so the frame counts as link activity before
- * the reply snapshot is taken (a frame that ends a hold is not answered with
- * state = hold). */
-static bool frame_is_ours(const uint8_t *f, size_t len)
-{
-    if (len < 4U)
-    {
-        return false;
-    }
-    uint16_t crc = modbus_crc16(f, len - 2U);
-    return f[len - 2U] == (uint8_t)(crc & 0xFFU) &&
-           f[len - 1U] == (uint8_t)(crc >> 8) &&
-           f[0] == MODBUS_SLAVE_ADDR;
-}
-
 /* Refresh the measurement and state fields only; last_clear_result is left
  * alone so it persists until the next clear attempt. */
 static void refresh_snapshot(uint8_t active_fault, uint32_t now_ms)
@@ -130,7 +114,10 @@ void LinkApp_Service(uint8_t active_fault)
     size_t req_len = 0U;
     if (link_uart_take_frame(req, &req_len))
     {
-        if (frame_is_ours(req, req_len))
+        /* Same rule modbus_handle_frame answers by; checked first so the frame
+         * counts as activity before the reply snapshot (a frame that ends a
+         * hold is not answered with state = hold). */
+        if (modbus_frame_is_ours(req, req_len))
         {
             link_state_activity(&s_link, now);
         }
@@ -175,9 +162,9 @@ bool LinkApp_InHold(void)
     return s_link.in_hold;
 }
 
-bool LinkApp_LinkSeen(void)
+bool LinkApp_LinkUp(void)
 {
-    return s_link.seen_activity;
+    return s_link.seen_activity && !s_link.expired;
 }
 
 uint32_t LinkApp_LastFrameTick(void)

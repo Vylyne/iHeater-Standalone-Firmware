@@ -135,8 +135,22 @@ bool link_uart_take_frame(uint8_t *buf, size_t *len)
     return got;
 }
 
+void link_uart_flush(void)
+{
+    NVIC_DisableIRQ(USART1_IRQn);
+    /* Mid-frame: drop the rest of it up to its RTO, never a truncated tail. */
+    s_drop = s_drop || (s_len > 0U && !s_ready);
+    s_len = 0U;
+    s_ready = false;
+    NVIC_EnableIRQ(USART1_IRQn);
+}
+
 void link_uart_send(const uint8_t *buf, size_t len)
 {
+    /* Receiver off while we talk, so an echoing adapter or a loopback cannot
+     * hand our own reply back as a request. Back on after TC: the line is
+     * idle-high then, so re-enabling cannot see a false start bit. */
+    USART1->CR1 &= ~USART_CR1_RE;
     for (size_t i = 0U; i < len; i++)
     {
         while ((USART1->ISR & USART_ISR_TXE) == 0U)
@@ -147,6 +161,7 @@ void link_uart_send(const uint8_t *buf, size_t len)
     while ((USART1->ISR & USART_ISR_TC) == 0U)
     {
     }
+    USART1->CR1 |= USART_CR1_RE;
 }
 
 #endif /* INPUT_MODE == INPUT_MODE_UART */

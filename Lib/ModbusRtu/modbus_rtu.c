@@ -46,20 +46,27 @@ static uint16_t be16(const uint8_t *p)
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
 }
 
-int modbus_handle_frame(const uint8_t *req, size_t req_len,
-                        uint8_t *resp, size_t resp_cap, const ModbusHandlers *h)
+bool modbus_frame_is_ours(const uint8_t *req, size_t req_len)
 {
     if (req_len < MIN_FRAME_LEN) {
-        return -1;
+        return false;
     }
     size_t body = req_len - 2U;
     uint16_t crc = modbus_crc16(req, body);
     if (req[body] != (uint8_t)(crc & 0xFFU) || req[body + 1U] != (uint8_t)(crc >> 8)) {
-        return -1;
+        return false;
     }
-    if (req[0] != MODBUS_SLAVE_ADDR) {
-        return -1;   /* other slave or broadcast: stay silent */
+    /* other slave or broadcast; or an exception-coded frame (our own echo) */
+    return req[0] == MODBUS_SLAVE_ADDR && (req[1] & 0x80U) == 0U;
+}
+
+int modbus_handle_frame(const uint8_t *req, size_t req_len,
+                        uint8_t *resp, size_t resp_cap, const ModbusHandlers *h)
+{
+    if (!modbus_frame_is_ours(req, req_len)) {
+        return -1;   /* stay silent */
     }
+    size_t body = req_len - 2U;
 
     uint8_t fc = req[1];
     switch (fc) {

@@ -30,6 +30,7 @@
 #include "pulse_input.h"
 #if INPUT_MODE == INPUT_MODE_UART
 #include "link_app.h"
+#include "link_uart.h"
 #endif
 /* USER CODE END Includes */
 
@@ -308,6 +309,11 @@ int main(void)
   }
 
   reset_LEDs(10);
+
+#if INPUT_MODE == INPUT_MODE_UART
+  // Requests that arrived during the boot sequence are stale; never apply them late.
+  link_uart_flush();
+#endif
 
   /* USER CODE END 2 */
 
@@ -1117,8 +1123,8 @@ void Update_LEDs(uint8_t mode, float current_temp, uint32_t speed)
       return;
     }
 
-    //* Waiting for the first frame since boot: slow chasing light (1 s step).
-    if (!LinkApp_LinkSeen())
+    //* Waiting for the link (none since boot, or the hold expired): slow chasing light (1 s step).
+    if (!LinkApp_LinkUp())
     {
       uint32_t phase = (tick / 1000U) % 3U;
       HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, phase == 0U ? GPIO_PIN_SET : GPIO_PIN_RESET);
