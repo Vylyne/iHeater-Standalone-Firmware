@@ -182,6 +182,7 @@ void ClearErrorCode(void);
 float GetTemperatureByMode(uint8_t mode);
 void Update_LEDs(uint8_t mode, float current_temp, uint32_t speed);
 void reset_LEDs(uint8_t repeats);
+static void UpdateTemperatures(void);
 #if DEVICE_PROFILE == DEVICE_PROFILE_DRYER
 static float ComputeHeaterTarget(float air_target);
 #endif
@@ -380,29 +381,7 @@ int main(void)
       }
     }
 
-    //* Zero the amounts before accumulation
-    for (int ch = 0; ch < ADC_CHANNEL_COUNT; ch++)
-    {
-      adc_sum[ch] = 0.0f;
-    }
-
-    for (int i = 0; i < ADC_SAMPLES; i++)
-    {
-      for (int ch = 0; ch < ADC_CHANNEL_COUNT; ch++)
-      {
-        adc_sum[ch] += adc_dma_buffer[i * ADC_CHANNEL_COUNT + ch];
-      }
-    }
-
-    for (int ch = 0; ch < ADC_CHANNEL_COUNT; ch++)
-    {
-      adc_value[ch] = adc_sum[ch] / ADC_SAMPLES / 4095.0f;
-      float filtered = ema_filter_update(&filters[ch], adc_value[ch]);
-      temperatures[ch] = thermistor_calc_temp(&thermistors[ch], filtered);
-    }
-
-    heater_temp = temperatures[1];
-    air_temp = temperatures[0];
+    UpdateTemperatures();
 
 #if INPUT_MODE == INPUT_MODE_UART
     // Serviced after the temperature update rather than at the top of the loop
@@ -1209,6 +1188,34 @@ void reset_LEDs(uint8_t repeats)
     HAL_Delay(200);
     IWDG->KR = 0xAAAA;
   }
+}
+
+//* Average the ADC DMA buffer, filter it and convert to °C (main loop and UART fault loop)
+static void UpdateTemperatures(void)
+{
+  //* Zero the amounts before accumulation
+  for (int ch = 0; ch < ADC_CHANNEL_COUNT; ch++)
+  {
+    adc_sum[ch] = 0.0f;
+  }
+
+  for (int i = 0; i < ADC_SAMPLES; i++)
+  {
+    for (int ch = 0; ch < ADC_CHANNEL_COUNT; ch++)
+    {
+      adc_sum[ch] += adc_dma_buffer[i * ADC_CHANNEL_COUNT + ch];
+    }
+  }
+
+  for (int ch = 0; ch < ADC_CHANNEL_COUNT; ch++)
+  {
+    adc_value[ch] = adc_sum[ch] / ADC_SAMPLES / 4095.0f;
+    float filtered = ema_filter_update(&filters[ch], adc_value[ch]);
+    temperatures[ch] = thermistor_calc_temp(&thermistors[ch], filtered);
+  }
+
+  heater_temp = temperatures[1];
+  air_temp = temperatures[0];
 }
 
 //* Get temperature by mode
