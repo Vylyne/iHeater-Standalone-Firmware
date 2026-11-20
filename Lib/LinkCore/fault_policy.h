@@ -28,6 +28,9 @@ bool fault_remote_clearable(uint8_t code);
 bool fault_readings_safe(float air_c, float heater_c);
 
 void safe_tracker_init(SafeTracker *t);
+/* Call on every service pass, whether or not a frame arrived: the tracker only
+ * measures continuity if it sees every reading, and a gap in calls would let a
+ * stale "safe" state count as continuous. */
 void safe_tracker_update(SafeTracker *t, float air_c, float heater_c, uint32_t now_ms);
 /* True when readings have been safe continuously for >= LINK_CLEAR_SAFE_MS. */
 bool safe_tracker_ok(const SafeTracker *t, uint32_t now_ms);

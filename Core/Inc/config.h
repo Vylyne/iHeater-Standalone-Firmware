@@ -124,6 +124,7 @@ enum Mode
 #define LINK_TX_BUF 64U
 
 // Fault table X(code, remote_clear): one row per line; remote_clear 1 = link may clear it, 0 = local only.
+// Codes above 0x0F are never remote-clearable, whatever their flag (the allow mask is 16 bits).
 #define FAULT_TABLE(X) \
     X(ERROR_FAULT_TEMP_TIMEOUT, 1)            /* fault_temp_timeout */ \
     X(ERROR_FAULT_HEATER_NORESP, 0)           /* fault_heater_noresp */ \

@@ -88,6 +88,30 @@ static void test_input_map(void)
     TEST_ASSERT_EQUAL_UINT8(MODBUS_EX_ILLEGAL_ADDRESS, link_regs_read_input(&R, 0x16, &v));
 }
 
+static void test_air_heater_invalid(void)
+{
+    fill();
+    /* Open circuit converts to about -273.15 C: finite but impossible. */
+    R.snap.air_c = -273.15f;
+    R.snap.heater_c = -273.15f;
+    TEST_ASSERT_EQUAL_HEX16(0x8000, rd_in(0x09));
+    TEST_ASSERT_EQUAL_HEX16(0x8000, rd_in(0x0A));
+    /* Not finite, and exactly at the open-circuit limits (main.c uses <=). */
+    R.snap.air_c = NAN;
+    R.snap.heater_c = INFINITY;
+    TEST_ASSERT_EQUAL_HEX16(0x8000, rd_in(0x09));
+    TEST_ASSERT_EQUAL_HEX16(0x8000, rd_in(0x0A));
+    R.snap.air_c = (float)MIN_AIR_TEMP;
+    R.snap.heater_c = (float)MIN_TEMP;
+    TEST_ASSERT_EQUAL_HEX16(0x8000, rd_in(0x09));
+    TEST_ASSERT_EQUAL_HEX16(0x8000, rd_in(0x0A));
+    /* Just above the limit reads normally. */
+    R.snap.air_c = (float)MIN_AIR_TEMP + 0.5f;
+    R.snap.heater_c = (float)MIN_TEMP + 0.5f;
+    TEST_ASSERT_EQUAL_HEX16(MIN_AIR_TEMP * 10 + 5, rd_in(0x09));
+    TEST_ASSERT_EQUAL_HEX16(MIN_TEMP * 10 + 5, rd_in(0x0A));
+}
+
 static void test_temp_c10(void)
 {
     TEST_ASSERT_EQUAL_INT16(542, link_temp_c10(54.24f));
@@ -190,6 +214,7 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_input_map);
+    RUN_TEST(test_air_heater_invalid);
     RUN_TEST(test_temp_c10);
     RUN_TEST(test_settings_block);
     RUN_TEST(test_target_write);

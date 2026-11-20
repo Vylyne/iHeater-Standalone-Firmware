@@ -32,6 +32,14 @@ uint8_t link_reset_cause(uint32_t csr)
 
 static uint16_t temp_reg(float c) { return (uint16_t)link_temp_c10(c); }
 
+/* An open or missing thermistor converts to a finite but impossible value
+ * (down to -273 °C), so a reading at or below the firmware's open-circuit
+ * limit is reported as unreadable (0x8000), as main.c treats it as open. */
+static uint16_t temp_reg_valid(float c, float min_c)
+{
+    return (isfinite(c) && c > min_c) ? temp_reg(c) : 0x8000u;
+}
+
 static uint16_t pwm_permille(float pct)
 {
     if (!isfinite(pct)) return 0;
@@ -55,8 +63,8 @@ uint8_t link_regs_read_input(void *ctx, uint16_t addr, uint16_t *out)
     case 0x06: v = fault_clear_allow_mask(); break;
     case 0x07: v = s->clears_left; break;
     case 0x08: v = s->last_clear_result; break;
-    case 0x09: v = temp_reg(s->air_c); break;
-    case 0x0A: v = temp_reg(s->heater_c); break;
+    case 0x09: v = temp_reg_valid(s->air_c, (float)MIN_AIR_TEMP); break;
+    case 0x0A: v = temp_reg_valid(s->heater_c, (float)MIN_TEMP); break;
     case 0x0B: v = s->aux_valid ? temp_reg(s->aux_c) : 0x8000u; break;
     case 0x0C: v = temp_reg(s->air_target_c); break;
     case 0x0D: v = temp_reg(s->heater_setpoint_c); break;

@@ -33,7 +33,11 @@ void link_uart_init(void)
 
     USART1->BRR = LINK_UART_BRR;
     USART1->CR2 = USART_CR2_RTOEN; /* 1 stop bit, receiver timeout on */
-    USART1->CR3 = 0U;
+    /* ONEBIT: sample each bit once (mid-bit) instead of three times. HSI48 is
+     * untrimmed here (no CRS sync source), so clock error is the main risk to
+     * the link; the single-sample method raises the receiver's clock
+     * tolerance from about 3.3 % to about 3.9 %. */
+    USART1->CR3 = USART_CR3_ONEBIT;
     USART1->RTOR = LINK_UART_RTO_BITS;
     USART1->ICR = USART_ICR_PECF | USART_ICR_FECF | USART_ICR_NCF | USART_ICR_ORECF |
                   USART_ICR_IDLECF | USART_ICR_TCCF | USART_ICR_RTOCF;

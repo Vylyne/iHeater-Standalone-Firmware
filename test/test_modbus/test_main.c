@@ -285,9 +285,26 @@ static void test_exception_coded_frame_ignored(void)
     TEST_ASSERT_EQUAL_INT(0, call_count);
 }
 
+static void test_exception_helper(void)
+{
+    uint8_t r[8], want[8] = {1, 0x86, MODBUS_EX_SERVER_FAILURE};
+    TEST_ASSERT_EQUAL_UINT8(0x04, MODBUS_EX_SERVER_FAILURE);
+    seal(want, 3);
+    TEST_ASSERT_EQUAL_INT(5, modbus_exception(0x06, MODBUS_EX_SERVER_FAILURE, r, sizeof r));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(want, r, 5);
+    /* The reply is itself a frame our rule rejects (exception-coded): no echo loop. */
+    TEST_ASSERT_FALSE(modbus_frame_is_ours(r, 5));
+    /* A function code that already carries 0x80 is not double-marked. */
+    TEST_ASSERT_EQUAL_INT(5, modbus_exception(0x86, MODBUS_EX_SERVER_FAILURE, r, sizeof r));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(want, r, 5);
+    /* Too small a buffer: no reply. */
+    TEST_ASSERT_EQUAL_INT(-1, modbus_exception(0x06, MODBUS_EX_SERVER_FAILURE, r, 4));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_exception_helper);
     RUN_TEST(test_crc_known_vector);
     RUN_TEST(test_fc04_reads_two);
     RUN_TEST(test_fc03_reads_one);

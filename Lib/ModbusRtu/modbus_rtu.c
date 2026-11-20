@@ -41,6 +41,11 @@ static int exception_reply(uint8_t *resp, size_t cap, uint8_t fc, uint8_t code)
     return seal(resp, 3U);
 }
 
+int modbus_exception(uint8_t fc, uint8_t code, uint8_t *resp, size_t resp_cap)
+{
+    return exception_reply(resp, resp_cap, (uint8_t)(fc & 0x7FU), code);
+}
+
 static uint16_t be16(const uint8_t *p)
 {
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);

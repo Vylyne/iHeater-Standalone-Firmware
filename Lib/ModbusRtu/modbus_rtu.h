@@ -11,6 +11,7 @@
 #define MODBUS_EX_ILLEGAL_FUNCTION  0x01U
 #define MODBUS_EX_ILLEGAL_ADDRESS   0x02U
 #define MODBUS_EX_ILLEGAL_VALUE     0x03U
+#define MODBUS_EX_SERVER_FAILURE    0x04U
 
 typedef struct {
     uint8_t (*read_input)(void *ctx, uint16_t addr, uint16_t *out);   /* 0 = ok, else exception */
@@ -32,5 +33,10 @@ bool modbus_frame_is_ours(const uint8_t *req, size_t req_len);
  * Otherwise returns the reply length written to resp. */
 int modbus_handle_frame(const uint8_t *req, size_t req_len,
                         uint8_t *resp, size_t resp_cap, const ModbusHandlers *h);
+
+/* Builds an exception reply for function code fc (the 0x80 bit is added).
+ * Returns the reply length (5), or -1 when resp_cap < 5. Used by the
+ * application to replace a reply it has already prepared but cannot honour. */
+int modbus_exception(uint8_t fc, uint8_t code, uint8_t *resp, size_t resp_cap);
 
 #endif /* MODBUS_RTU_H */

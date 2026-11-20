@@ -18,6 +18,7 @@ extern float temperatures[];
 extern float heater_setpoint;
 extern float pwm; /* heater PID output, percent 0..100 */
 void ClearErrorCode(void); /* main.c: writes ERROR_NONE to the fault page */
+uint32_t LoadErrorCode(void); /* main.c: reads the fault page back */
 
 static LinkRegs s_regs; /* persistent: the write handler owns snap.last_clear_result */
 static LinkState s_link;
@@ -27,15 +28,16 @@ static uint32_t s_last_frame_tick;
 static uint8_t s_reset_cause = LINK_RESET_UNKNOWN;
 static bool s_reset_cause_read;
 
-/* Remote-clear counter and last fault. In .noinit (not zeroed or copied by
- * the startup code), so they survive the software reset that follows a fault
- * or a remote clear, and the watchdog and pin resets. LinkApp_Init re-arms
- * them on a power-on reset or when the magic is missing. volatile: the
- * decrement must be in RAM before NVIC_SystemReset. */
+/* Remote-clear counter, last fault and last clear result. In .noinit (not
+ * zeroed or copied by the startup code), so they survive the software reset
+ * that follows a fault or a remote clear, and the watchdog and pin resets.
+ * LinkApp_Init re-arms them on a power-on reset or when the magic is missing.
+ * volatile: the decrement must be in RAM before NVIC_SystemReset. */
 #define LINK_CLEARS_MAGIC 0x434C5253UL /* "CLRS" */
 static volatile uint32_t s_clears_magic __attribute__((section(".noinit")));
 static volatile uint32_t s_clears_left __attribute__((section(".noinit")));
 static volatile uint32_t s_last_fault __attribute__((section(".noinit")));
+static volatile uint32_t s_last_clear_result __attribute__((section(".noinit"))); /* ClearResult */
 
 static const ModbusHandlers s_handlers = {
     link_regs_read_input,
@@ -44,8 +46,8 @@ static const ModbusHandlers s_handlers = {
     &s_regs,
 };
 
-/* Refresh the measurement and state fields only; last_clear_result is left
- * alone so it persists until the next clear attempt. */
+/* Refresh the measurement and state fields. last_clear_result comes from
+ * .noinit, so it persists until the next clear attempt, across the clear reset. */
 static void refresh_snapshot(uint8_t active_fault, uint32_t now_ms)
 {
     LinkSnapshot *s = &s_regs.snap;
@@ -61,6 +63,7 @@ static void refresh_snapshot(uint8_t active_fault, uint32_t now_ms)
 
     s->active_fault = active_fault;
     s->last_fault = (uint8_t)s_last_fault;
+    s->last_clear_result = (uint8_t)s_last_clear_result;
     s->clears_left = (uint8_t)s_clears_left;
     s->reset_cause = s_reset_cause;
     s->safe_ok = safe_tracker_ok(&s_safe, now_ms);
@@ -102,11 +105,17 @@ void LinkApp_Init(uint8_t active_fault)
         {
             s_clears_left = LINK_REMOTE_CLEARS;
             s_last_fault = ERROR_NONE;
+            s_last_clear_result = CLEAR_NONE;
             s_clears_magic = LINK_CLEARS_MAGIC;
         }
         else if (s_clears_left > LINK_REMOTE_CLEARS)
         {
             s_clears_left = 0U; /* corrupt count: fail closed, no remote clears until a power cycle */
+        }
+
+        if (s_last_clear_result > CLEAR_NO_FAULT)
+        {
+            s_last_clear_result = CLEAR_NONE; /* outside the ClearResult range: corrupt */
         }
     }
 
@@ -147,11 +156,10 @@ void LinkApp_Service(uint8_t active_fault)
 
         uint8_t resp[LINK_TX_BUF];
         int resp_len = modbus_handle_frame(req, req_len, resp, sizeof resp, &s_handlers);
-        if (resp_len > 0)
-        {
-            link_uart_send(resp, (size_t)resp_len);
-            s_last_frame_tick = now;
-        }
+
+        /* The write handler records the outcome of every clear attempt in the
+         * snapshot; keep the persistent copy in step. */
+        s_last_clear_result = s_regs.snap.last_clear_result;
 
         if (s_regs.cmd.target_written)
         {
@@ -159,20 +167,45 @@ void LinkApp_Service(uint8_t active_fault)
             s_regs.cmd.target_written = false;
         }
 
-        if (s_regs.cmd.clear_approved)
+        /* Only the fault loop passes a fault, and the policy refuses a clear
+         * without one; checked again here because this path restarts the
+         * heater's normal boot. */
+        bool do_clear = s_regs.cmd.clear_approved && resp_len > 0 &&
+                        active_fault != ERROR_NONE && s_clears_left > 0U;
+        s_regs.cmd.clear_approved = false;
+
+        if (do_clear)
         {
-            s_regs.cmd.clear_approved = false;
-            /* Only the fault loop passes a fault, and the policy refuses a
-             * clear without one; checked again here because this path
-             * restarts the heater's normal boot. */
-            if (active_fault != ERROR_NONE && s_clears_left > 0U)
+            /* Spec order: decrement, clear the flash, reply, reset. The reply
+             * waits for the erase so it can say whether it worked. The clear
+             * is spent either way (fail closed). */
+            s_clears_left--; /* volatile .noinit: in RAM before any reset */
+            ClearErrorCode();
+
+            if (LoadErrorCode() == ERROR_NONE)
             {
-                /* The reply is already fully on the wire: link_uart_send
-                 * returns only after TC. */
-                s_clears_left--;
-                ClearErrorCode();
-                NVIC_SystemReset(); /* DSB first, so the decrement is in RAM; does not return */
+                s_last_clear_result = CLEAR_OK;
+                s_regs.snap.last_clear_result = CLEAR_OK;
+                link_uart_send(resp, (size_t)resp_len);
+                s_last_frame_tick = now;
+                /* link_uart_send returns only after TC, so the reply is fully
+                 * on the wire. DSB first, so the stores are in RAM; does not return. */
+                NVIC_SystemReset();
             }
+
+            /* The fault page still holds the fault: report a device failure
+             * for the same function code, and stay in the fault loop. There is
+             * no ClearResult for this, so the register falls back to "none"
+             * rather than claim a clear that did not happen. */
+            s_last_clear_result = CLEAR_NONE;
+            s_regs.snap.last_clear_result = CLEAR_NONE;
+            resp_len = modbus_exception(req[1], MODBUS_EX_SERVER_FAILURE, resp, sizeof resp);
+        }
+
+        if (resp_len > 0)
+        {
+            link_uart_send(resp, (size_t)resp_len);
+            s_last_frame_tick = now;
         }
     }
 
