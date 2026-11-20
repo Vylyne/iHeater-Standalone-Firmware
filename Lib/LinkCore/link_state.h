@@ -4,6 +4,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* Caller contract: sample one monotonic now_ms per loop pass, before handling
+ * frames, and pass that same value to both link_state_activity() and
+ * link_state_tick(). If the first tick after an outage is very late, it can
+ * return HOLD_STARTED with remaining already 0; the next tick then returns
+ * HOLD_EXPIRED. */
 typedef enum { LINK_EVT_NONE = 0, LINK_EVT_HOLD_STARTED, LINK_EVT_HOLD_EXPIRED } LinkEvent;
 
 typedef struct {

@@ -89,6 +89,17 @@ static void test_wraparound(void)
     TEST_ASSERT_EQUAL_INT(LINK_EVT_HOLD_EXPIRED, link_state_tick(&s, h + 60000U));
 }
 
+static void test_late_first_tick(void)
+{
+    LinkState s;
+    link_state_init(&s);
+    link_state_activity(&s, 1000);
+    TEST_ASSERT_EQUAL_INT(LINK_EVT_HOLD_STARTED, link_state_tick(&s, 71000));
+    TEST_ASSERT_EQUAL_UINT16(0, link_state_hold_remaining_s(&s, 71000));
+    TEST_ASSERT_EQUAL_INT(LINK_EVT_HOLD_EXPIRED, link_state_tick(&s, 71001));
+    TEST_ASSERT_EQUAL_UINT16(1, s.loss_count);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -99,5 +110,6 @@ int main(void)
     RUN_TEST(test_activity_ends_hold);
     RUN_TEST(test_activity_after_expiry_allows_new_hold);
     RUN_TEST(test_wraparound);
+    RUN_TEST(test_late_first_tick);
     return UNITY_END();
 }
