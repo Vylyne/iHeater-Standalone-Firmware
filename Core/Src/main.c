@@ -178,6 +178,9 @@ static void MX_ADC_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 uint32_t LoadErrorCode(void);
+void SaveErrorCode(uint32_t code);
+void NVS_Load(void);
+void MX_IWDG_Init(void);
 void ClearErrorCode(void);
 float GetTemperatureByMode(uint8_t mode);
 void Update_LEDs(uint8_t mode, float current_temp, uint32_t speed);
