@@ -28,6 +28,9 @@
 #include "pid.h"
 #include "ema_filter.h"
 #include "pulse_input.h"
+#if INPUT_MODE == INPUT_MODE_UART
+#include "link_app.h"
+#endif
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,6 +51,10 @@ typedef struct
   float trigger_on_temp; //
   float trigger_off_temp;
 } NVS_Data;
+
+// Link builds (pulse and UART) take heating commands from the remote link
+// instead of the MODE button and the trigger thermistor.
+#define LINK_BUILD (INPUT_MODE != INPUT_MODE_ANALOG)
 
 /* USER CODE END PD */
 
@@ -240,6 +247,10 @@ int main(void)
     Error_Handler();
   }
 
+#if INPUT_MODE == INPUT_MODE_UART
+  LinkApp_Init(ERROR_NONE);
+#endif
+
   //* Initializing thermistors
   const ThermistorData *data = get_thermistor_data(SELECTED_THERMISTOR_TYPE);
   if (data == NULL)
@@ -387,6 +398,14 @@ int main(void)
     heater_temp = temperatures[1];
     air_temp = temperatures[0];
 
+#if INPUT_MODE == INPUT_MODE_UART
+    // Serviced after the temperature update rather than at the top of the loop
+    // (where the pulse build reads frames), so every reply carries this pass's
+    // readings: on the first pass air/heater are still 0 °C.
+    LinkApp_Service(ERROR_NONE);
+    mode = (LinkApp_AirTarget() > 0.0f) ? MODE_PULSE : MODE_0;
+#endif
+
     uint32_t current_time = HAL_GetTick();
 
     if ((current_time - previous_time) >= PID_UPDATE_INTERVAL_MS && mode != 0)
@@ -400,6 +419,9 @@ int main(void)
 #if INPUT_MODE == INPUT_MODE_DIGITAL_PULSE
       // Command setpoint from the RMT pulse frame replaces the mode-based table.
       air_target = pulse_air_target;
+#elif INPUT_MODE == INPUT_MODE_UART
+      // Command setpoint from the Modbus link replaces the mode-based table.
+      air_target = LinkApp_AirTarget();
 #endif
 #if DEVICE_PROFILE == DEVICE_PROFILE_DRYER
       heater_target = ComputeHeaterTarget(air_target);
@@ -577,7 +599,7 @@ int main(void)
     }
     /*=================END OF CHECKS============================*/
 
-#if BOARD_REVISION == BOARD_REV_1_1 && INPUT_MODE != INPUT_MODE_DIGITAL_PULSE
+#if BOARD_REVISION == BOARD_REV_1_1 && !LINK_BUILD
     /*=========================TRIGGER============================*/
     trigger_temp = temperatures[2];
     // //* Fires once when the temperature exceeds the threshold for the first time
@@ -642,9 +664,9 @@ int main(void)
     /*=====================ТРИГГЕР КОНЕЦ==========================*/
 #endif
 
-#if INPUT_MODE != INPUT_MODE_DIGITAL_PULSE
-    // In the pulse build the MODE button is only used at boot to clear persisted errors.
-    // Runtime mode cycling and calibration are disabled here: heating is driven by the RMT link.
+#if !LINK_BUILD
+    // In the link builds (pulse and UART) the MODE button is only used at boot to clear persisted errors.
+    // Runtime mode cycling and calibration are disabled there: heating is driven by the link.
     static uint32_t button_press_time = 0;
     static bool button_was_pressed = false;
     static bool long_press_handled = false;
@@ -735,7 +757,7 @@ int main(void)
         HAL_Delay(300); //* Button debounce
       }
     }
-#endif // INPUT_MODE != INPUT_MODE_DIGITAL_PULSE
+#endif // !LINK_BUILD
 
     Update_LEDs(mode, air_temp, 500);
 
@@ -1077,6 +1099,48 @@ void Update_LEDs(uint8_t mode, float current_temp, uint32_t speed)
     HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_SET);
     HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
     uint32_t since = tick - pulse_last_frame_tick;
+    HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, (since < 80U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    return;
+  }
+#elif INPUT_MODE == INPUT_MODE_UART
+  //* Link patterns cover the two run modes only. Any other value is a fault code
+  //* from the boot fault display and falls through to the bit-mask rendering below.
+  if (mode == MODE_0 || mode == MODE_PULSE)
+  {
+    //* Link hold: all three LEDs blink together at 4 Hz (toggle every 125 ms).
+    if (LinkApp_InHold())
+    {
+      GPIO_PinState s = ((tick / 125U) & 1U) ? GPIO_PIN_SET : GPIO_PIN_RESET;
+      HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, s);
+      HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, s);
+      HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, s);
+      return;
+    }
+
+    //* Waiting for the first frame since boot: slow chasing light (1 s step).
+    if (!LinkApp_LinkSeen())
+    {
+      uint32_t phase = (tick / 1000U) % 3U;
+      HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, phase == 0U ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, phase == 1U ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, phase == 2U ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      return;
+    }
+
+    //* Heating: chasing light LED1 -> LED2 -> LED3 at 500 ms step.
+    if (mode == MODE_PULSE)
+    {
+      uint32_t phase = (tick / 500U) % 3U;
+      HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, phase == 0U ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, phase == 1U ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, phase == 2U ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      return;
+    }
+
+    //* Idle, link up: LED1 solid; LED3 flashes ~80 ms on every answered frame.
+    HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
+    uint32_t since = tick - LinkApp_LastFrameTick();
     HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, (since < 80U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
     return;
   }

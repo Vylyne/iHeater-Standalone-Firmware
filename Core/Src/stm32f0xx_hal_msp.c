@@ -102,7 +102,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
     /**ADC GPIO Configuration
     PA0     ------> ADC_IN0
     PA3     ------> ADC_IN3
-    PB1     ------> ADC_IN9            (analog builds only; repurposed as EXTI in pulse build)
+    PB1     ------> ADC_IN9            (all builds except pulse; EXTI input there)
     */
     GPIO_InitStruct.Pin = TH1_Pin|TH0_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
@@ -160,7 +160,7 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc)
     /**ADC GPIO Configuration
     PA0     ------> ADC_IN0
     PA3     ------> ADC_IN3
-    PB1     ------> ADC_IN9            (analog builds only; repurposed as EXTI in pulse build)
+    PB1     ------> ADC_IN9            (all builds except pulse; EXTI input there)
     */
     HAL_GPIO_DeInit(GPIOA, TH1_Pin|TH0_Pin);
 #if INPUT_MODE != INPUT_MODE_DIGITAL_PULSE

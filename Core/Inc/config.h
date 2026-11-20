@@ -18,7 +18,7 @@ enum Mode
     MODE_7,
     CALIBRATION_STEP_1,
     CALIBRATION_STEP_2,
-    MODE_PULSE  // Pulse build only: heating controlled by RMT command in pulse_air_target.
+    MODE_PULSE  // Link-controlled heating (pulse or UART build).
 };
 
 #define ERROR_NONE 0x00 // No error
