@@ -55,9 +55,10 @@ press at power-on.
 ## Constraints
 
 - **MCU:** STM32F042F6, TSSOP20. 32 KB flash, 6 KB RAM. The pulse build is
-  25.7 KB at `-O0` (78 %). The last flash page (`0x08007C00`, 1 KB) holds
-  the persisted fault code and is not reserved in the linker script, so the
-  image must stay below 31 KB or the linker script must reserve that page.
+  25.7 KB at `-O0` (78 %). The last two flash pages are in use but not
+  reserved in the linker script: `0x08007800` holds the trigger calibration
+  (NVS) and `0x08007C00` the persisted fault code. The image must stay below
+  30 KB (`0x08007800`); the UART build's linker script reserves both pages.
 - **Pins:** USB-C D− → pin 17, D+ → pin 18, through 22–40 Ω series
   resistors and an ESD array (measured by the user). With
   `SYSCFG_CFGR1.PA11_PA12_RMP` clear (the reset default), pins 17/18 are
