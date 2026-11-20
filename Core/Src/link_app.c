@@ -98,14 +98,15 @@ void LinkApp_Init(uint8_t active_fault)
         RCC->CSR |= RCC_CSR_RMVF;
         s_reset_cause_read = true;
 
-        /* A count above the limit can only be corrupt RAM: treat it like a
-         * missing magic. */
-        if (s_reset_cause == LINK_RESET_POWER_ON || s_clears_magic != LINK_CLEARS_MAGIC ||
-            s_clears_left > LINK_REMOTE_CLEARS)
+        if (s_reset_cause == LINK_RESET_POWER_ON || s_clears_magic != LINK_CLEARS_MAGIC)
         {
             s_clears_left = LINK_REMOTE_CLEARS;
             s_last_fault = ERROR_NONE;
             s_clears_magic = LINK_CLEARS_MAGIC;
+        }
+        else if (s_clears_left > LINK_REMOTE_CLEARS)
+        {
+            s_clears_left = 0U; /* corrupt count: fail closed, no remote clears until a power cycle */
         }
     }
 

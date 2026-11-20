@@ -183,6 +183,7 @@ float GetTemperatureByMode(uint8_t mode);
 void Update_LEDs(uint8_t mode, float current_temp, uint32_t speed);
 void reset_LEDs(uint8_t repeats);
 static void UpdateTemperatures(void);
+void SetHeaterPWM(float pwm_percent);
 #if DEVICE_PROFILE == DEVICE_PROFILE_DRYER
 static float ComputeHeaterTarget(float air_target);
 #endif
