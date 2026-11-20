@@ -66,8 +66,5 @@ Use these:
 
 - Conventional-style subjects: `feat(link): …`, `fix: …`, `docs: …`, `refactor: …`, `build: …`.
 - Work on a feature branch, never directly on `main`. Do not push without the owner's say-so.
-- **Line endings:**
-  - `CHANGELOG.md` is stored with CRLF.
-  - With `core.autocrlf=true`, a rewrite can silently turn the whole file into LF.
-  - After committing, check `git diff --stat` and confirm only the lines you meant to change appear.
+- **Line endings:** LF everywhere, enforced by `.gitattributes` (`* text=auto eol=lf`; images and binaries are marked `binary`). Write new files with LF. If `git diff --stat` shows a whole file changed for a small edit, the line endings are wrong.
 - Never commit build outputs (`Firmware/`, `.pio/`, `*.bin`, `*.elf`, `*.hex`).
