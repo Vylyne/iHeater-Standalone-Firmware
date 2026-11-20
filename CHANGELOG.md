@@ -1,5 +1,12 @@
 Changelog
 
+**Unreleased**
+- New build `iheater_rev1_1_uart`: Modbus RTU link (slave 1, 115200 8N1) over USART1 for an external iHeater Remote; wiring on the USB-C pins (D− = iHeater TX, D+ = iHeater RX)
+- Remote sets the air target, reads state and temperatures, and can clear allow-listed faults (3 per power cycle, readings safe for 5 s)
+- Link hold after 3 s of silence; 60 s later (63 s after the last frame) the target drops to 0 (not a fault)
+- A remote clear is replied to only after the fault page is erased and verified; if the erase fails the reply is exception 0x04, the board stays in the fault and the clear is spent
+- Bench tool `tools/link_probe.py`; see the README section "Working with iHeater Remote (UART build)"
+
 **v0.5.0**
 - New build `iheater_rev1_1_pulse` for pairing with the ESP-based iHeater-link module
 - Chamber setpoint is received over a single GPIO line as a pulse train on the TH2 connector (PB1, EXTI); code equals air temperature in °C

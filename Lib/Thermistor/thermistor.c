@@ -27,9 +27,9 @@ void thermistor_set_coefficients(Thermistor *therm,
     float inv_t1 = 1.0f / (t1 - KELVIN_TO_CELSIUS);
     float inv_t2 = 1.0f / (t2 - KELVIN_TO_CELSIUS);
     float inv_t3 = 1.0f / (t3 - KELVIN_TO_CELSIUS);
-    float ln_r1 = log(r1);
-    float ln_r2 = log(r2);
-    float ln_r3 = log(r3);
+    float ln_r1 = logf(r1);
+    float ln_r2 = logf(r2);
+    float ln_r3 = logf(r3);
     float ln3_r1 = ln_r1 * ln_r1 * ln_r1;
     float ln3_r2 = ln_r2 * ln_r2 * ln_r2;
     float ln3_r3 = ln_r3 * ln_r3 * ln_r3;
@@ -50,7 +50,7 @@ void thermistor_set_coefficients(Thermistor *therm,
 // Расчёт температуры из значения АЦП
 float thermistor_calc_temp(Thermistor *therm, float adc_value) {
     float r = therm->pullup * adc_value / (1.0f - adc_value);
-    float ln_r = log(r - therm->inline_resistor);
+    float ln_r = logf(r - therm->inline_resistor);
     float inv_t = therm->c1 + therm->c2 * ln_r + therm->c3 * ln_r * ln_r * ln_r;
     return (1.0f / inv_t) + KELVIN_TO_CELSIUS;
 }

@@ -18,7 +18,7 @@ enum Mode
     MODE_7,
     CALIBRATION_STEP_1,
     CALIBRATION_STEP_2,
-    MODE_PULSE  // Pulse build only: heating controlled by RMT command in pulse_air_target.
+    MODE_PULSE  // Link-controlled heating (pulse or UART build).
 };
 
 #define ERROR_NONE 0x00 // No error
@@ -91,8 +91,10 @@ enum Mode
 //   INPUT_MODE_DIGITAL_PULSE — PA3 is a digital EXTI input that decodes an RMT pulse-train
 //                              from ESP. Heater thermistor is re-wired to the TH2 connector
 //                              (PB1), the trigger feature is disabled in this build.
+//   INPUT_MODE_UART          — USART1 on USB-C; TH2 is an aux thermistor.
 #define INPUT_MODE_ANALOG 0
 #define INPUT_MODE_DIGITAL_PULSE 1
+#define INPUT_MODE_UART 2
 #ifndef INPUT_MODE
 #define INPUT_MODE INPUT_MODE_ANALOG
 #endif
@@ -108,6 +110,31 @@ enum Mode
 #define PULSE_MIN_TARGET 45U         // Minimum accepted heating setpoint (°C). Codes below this are ignored (except 0 and PULSE_OFF_CODE).
 #define PULSE_LINK_GRACE_MS 20000U   // Boot grace period: link-lost is suppressed while we are still waiting for the first frame.
 #endif
+
+// UART link (Modbus RTU) tuning. Always defined so host tests can use them.
+#define LINK_SILENCE_MS 3000U             // No valid frame for this long -> link held, then expires.
+#define LINK_HOLD_S 60U                   // Hold window after silence; expiry sets target 0 (not a fault).
+#define LINK_MIN_TARGET 45U               // Minimum accepted remote setpoint (°C).
+#define LINK_MAX_TARGET (MAX_AIR_TEMP - 5) // Maximum accepted remote setpoint (°C).
+#define LINK_CLEAR_MARGIN 10.0f           // Remote clear needs readings this far below MAX_AIR_TEMP / MAX_TEMP.
+#define LINK_CLEAR_SAFE_MS 5000U          // Readings must stay safe this long before a remote clear.
+#define LINK_REMOTE_CLEARS 3U             // Remote clears allowed per power cycle.
+#define LINK_BOOTLOADER_MAGIC 0xB007U     // Magic value that requests a jump to the bootloader.
+#define LINK_RX_BUF 64U
+#define LINK_TX_BUF 64U
+
+// Fault table X(code, remote_clear): one row per line; remote_clear 1 = link may clear it, 0 = local only.
+// Codes above 0x0F are never remote-clearable, whatever their flag (the allow mask is 16 bits).
+#define FAULT_TABLE(X) \
+    X(ERROR_FAULT_TEMP_TIMEOUT, 1)            /* fault_temp_timeout */ \
+    X(ERROR_FAULT_HEATER_NORESP, 0)           /* fault_heater_noresp */ \
+    X(ERROR_MANUAL_SHUTDOWN, 1)               /* manual_shutdown */ \
+    X(ERROR_THERMISTOR_OPEN_AIR, 1)           /* thermistor_open_air */ \
+    X(ERROR_THERMISTOR_OPEN_HEATER, 1)        /* thermistor_open_heater */ \
+    X(ERROR_OVERHEAT_HEATER, 0)               /* overheat_heater */ \
+    X(ERROR_OVERHEAT_AIR, 1)                  /* overheat_air */ \
+    X(ERROR_LINK_LOST, 1)                     /* link_lost */ \
+    X(ERROR_UNKNOWN, 0)                       /* unknown */
 
 #define HEATER_MIN_TEMP_DELTA 0.1f                  // Minimum required temperature increase
 #define HEATER_RESPONSE_TIMEOUT_MS (1000 * 60 * 30) // Time to wait for heater response
