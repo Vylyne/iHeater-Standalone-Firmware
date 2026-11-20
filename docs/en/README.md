@@ -151,6 +151,90 @@ In the pulse build, the MODE button **does not cycle modes and does not trigger 
 
 ---
 
+### Working with iHeater Remote (UART build)
+
+The `iheater_rev1_1_uart` build lets a Remote (an ESP module, a single-board computer, a USB serial adapter) drive iHeater over a Modbus RTU link on USART1. The Remote can set the chamber air temperature, read the state and both temperatures, and clear some faults. The image is limited to 30 KB (the last two flash pages hold the trigger calibration and the fault code); it is currently about 28.2 KB.
+
+#### Wiring
+
+The link uses the USB-C connector pins, not USB data. 3.3 V logic.
+
+| USB-C pin | Signal | MCU pin |
+|-----------|--------|---------|
+| VBUS | 5 V | power in |
+| GND | GND | GND |
+| D− | iHeater TX | PA9 (pin 17) |
+| D+ | iHeater RX | PA10 (pin 18) |
+
+Cross the data lines: the Remote's TX goes to iHeater RX (D+), and the Remote's RX goes to iHeater TX (D−).
+
+!!! warning "The board has no 5 V regulator. Power it from the Remote's 5 V (VBUS) only. Never feed 5 V from USB and from the JST 5 V connector at the same time."
+
+!!! warning "Never connect or disconnect the link cable with power applied."
+
+Keep the heater thermistor on **TH0** and the air thermistor on **TH1**. The trigger feature is disabled in this build.
+
+#### Serial settings
+
+Modbus RTU, slave address 1, 115200 baud, 8N1. Function codes 03, 04, 06 and 10 are supported; errors are reported as exceptions 0x01 (function), 0x02 (address or state) and 0x03 (value). Frames for other addresses, frames with a bad CRC and function codes with bit 0x80 set get no reply. Temperatures on the wire are signed 16-bit tenths of °C; an unreadable sensor reads `0x8000`. The full register map is in [docs/design/2026-11-19-uart-link-design.md](../design/2026-11-19-uart-link-design.md).
+
+#### Hold behaviour
+
+At boot the target is 0 until the Remote writes one. After **3 s** without a valid frame iHeater enters hold and keeps the last target; **60 s** later (63 s after the last frame) the target drops to 0. This is not a fault, and heating restarts only on a new target.
+
+#### LED indication
+
+| State | LEDs |
+|-------|------|
+| Waiting for link (no frame yet, or after the hold expired) | slow chasing light, 1000 ms step |
+| Idle (target 0) | LED1 solid, short LED3 flash on every answered frame |
+| Heating | chasing light, 500 ms step |
+| Hold (link silent) | all three blink together at 4 Hz |
+| Fault | the usual fault patterns, see "Error Handling" |
+
+#### Faults and remote clearing
+
+| Code | Fault | Remote clear |
+|------|-------|--------------|
+| `0x01` | Temperature timeout | yes |
+| `0x02` | Heater not responding | no |
+| `0x03` | Manual shutdown | yes |
+| `0x04` | Air thermistor open | yes |
+| `0x05` | Heater thermistor open | yes |
+| `0x06` | Heater over-temperature | no |
+| `0x07` | Air over-temperature | yes |
+| `0x08` | Link lost | yes |
+| `0xFF` | Unknown | no |
+
+The table is the `FAULT_TABLE` in `config.h`. A fault stays latched until it is cleared. To clear it remotely, write the active fault code to holding register `0x0101`. The write succeeds only if all of these hold:
+
+- the code equals the active fault and that fault is marked "yes" above;
+- remote clears are left (3 per power cycle; a power cycle re-arms them);
+- the readings have been safe for 5 s: both thermistors valid, air at least 10 °C below `MAX_AIR_TEMP`, heater element at least 10 °C below `MAX_TEMP`.
+
+On success the board replies, clears the stored fault and restarts; the target is 0 after the restart. Holding MODE at power-on still clears a fault locally.
+
+Notes for the Remote side:
+
+- Clear with a single-register write (function 06). An FC 10 write that spans `0x0101` and later registers may clear the fault and restart the board even though the reply is an exception.
+- A multi-register write that is refused part-way keeps the registers written before the refusal. Re-read after any exception.
+- If the flash erase fails, the board has still replied with success; it restarts back into the fault with one clear used. Re-read the state after the restart.
+
+#### Bench probe
+
+`tools/link_probe.py` needs Python with `pymodbus` 3.x and `pyserial` (`pip install "pymodbus>=3,<4" pyserial`):
+
+```
+python tools/link_probe.py COM5 read        # all registers, decoded
+python tools/link_probe.py COM5 target 60   # set the air target in °C (0 = off)
+python tools/link_probe.py COM5 clear 7     # clear active fault code 7
+python tools/link_probe.py COM5 raw         # undecoded registers plus the frames on the wire
+```
+
+The exit code is 0 on success, 1 on a timeout or error reply, 2 on bad arguments.
+
+---
+
 ## How to Flash the Firmware
 
 ### Download
