@@ -123,8 +123,17 @@ enum Mode
 #define LINK_RX_BUF 64U
 #define LINK_TX_BUF 64U
 
-// Fault table X(code, remote_clear): remote_clear is 1 if the link may clear that fault.
-#define FAULT_TABLE(X)                          X(ERROR_FAULT_TEMP_TIMEOUT, 1)              X(ERROR_FAULT_HEATER_NORESP, 0)             X(ERROR_MANUAL_SHUTDOWN, 1)                 X(ERROR_THERMISTOR_OPEN_AIR, 1)             X(ERROR_THERMISTOR_OPEN_HEATER, 1)          X(ERROR_OVERHEAT_HEATER, 0)                 X(ERROR_OVERHEAT_AIR, 1)                    X(ERROR_LINK_LOST, 1)                       X(ERROR_UNKNOWN, 0)
+// Fault table X(code, remote_clear): one row per line; remote_clear 1 = link may clear it, 0 = local only.
+#define FAULT_TABLE(X) \
+    X(ERROR_FAULT_TEMP_TIMEOUT, 1)            /* fault_temp_timeout */ \
+    X(ERROR_FAULT_HEATER_NORESP, 0)           /* fault_heater_noresp */ \
+    X(ERROR_MANUAL_SHUTDOWN, 1)               /* manual_shutdown */ \
+    X(ERROR_THERMISTOR_OPEN_AIR, 1)           /* thermistor_open_air */ \
+    X(ERROR_THERMISTOR_OPEN_HEATER, 1)        /* thermistor_open_heater */ \
+    X(ERROR_OVERHEAT_HEATER, 0)               /* overheat_heater */ \
+    X(ERROR_OVERHEAT_AIR, 1)                  /* overheat_air */ \
+    X(ERROR_LINK_LOST, 1)                     /* link_lost */ \
+    X(ERROR_UNKNOWN, 0)                       /* unknown */
 
 #define HEATER_MIN_TEMP_DELTA 0.1f                  // Minimum required temperature increase
 #define HEATER_RESPONSE_TIMEOUT_MS (1000 * 60 * 30) // Time to wait for heater response
