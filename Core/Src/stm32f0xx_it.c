@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "config.h"
 #include "pulse_input.h"
+#include "link_uart.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -172,6 +173,16 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   {
     PulseInput_OnFallingEdge();
   }
+}
+#endif
+
+#if INPUT_MODE == INPUT_MODE_UART
+/**
+ * @brief USART1 interrupt handler: Modbus link receive and frame timeout.
+ */
+void USART1_IRQHandler(void)
+{
+  link_uart_irq();
 }
 #endif
 /* USER CODE END 1 */
