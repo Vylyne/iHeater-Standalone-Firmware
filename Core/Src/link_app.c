@@ -17,6 +17,7 @@ extern float heater_temp;
 extern float temperatures[];
 extern float heater_setpoint;
 extern float pwm; /* heater PID output, percent 0..100 */
+void ClearErrorCode(void); /* main.c: writes ERROR_NONE to the fault page */
 
 static LinkRegs s_regs; /* persistent: the write handler owns snap.last_clear_result */
 static LinkState s_link;
@@ -25,10 +26,16 @@ static float s_target_c;
 static uint32_t s_last_frame_tick;
 static uint8_t s_reset_cause = LINK_RESET_UNKNOWN;
 static bool s_reset_cause_read;
-/* Plain statics for now; the fault-clear task moves these to .noinit so they
- * survive the software reset that follows a clear. */
-static uint8_t s_clears_left = LINK_REMOTE_CLEARS;
-static uint8_t s_last_fault;
+
+/* Remote-clear counter and last fault. In .noinit (not zeroed or copied by
+ * the startup code), so they survive the software reset that follows a fault
+ * or a remote clear, and the watchdog and pin resets. LinkApp_Init re-arms
+ * them on a power-on reset or when the magic is missing. volatile: the
+ * decrement must be in RAM before NVIC_SystemReset. */
+#define LINK_CLEARS_MAGIC 0x434C5253UL /* "CLRS" */
+static volatile uint32_t s_clears_magic __attribute__((section(".noinit")));
+static volatile uint32_t s_clears_left __attribute__((section(".noinit")));
+static volatile uint32_t s_last_fault __attribute__((section(".noinit")));
 
 static const ModbusHandlers s_handlers = {
     link_regs_read_input,
@@ -53,8 +60,8 @@ static void refresh_snapshot(uint8_t active_fault, uint32_t now_ms)
         s->state = LINK_DEV_IDLE;
 
     s->active_fault = active_fault;
-    s->last_fault = s_last_fault;
-    s->clears_left = s_clears_left;
+    s->last_fault = (uint8_t)s_last_fault;
+    s->clears_left = (uint8_t)s_clears_left;
     s->reset_cause = s_reset_cause;
     s->safe_ok = safe_tracker_ok(&s_safe, now_ms);
 
@@ -84,14 +91,27 @@ static void refresh_snapshot(uint8_t active_fault, uint32_t now_ms)
 
 void LinkApp_Init(uint8_t active_fault)
 {
-    (void)active_fault; /* used once the fault loop calls this */
-
     if (!s_reset_cause_read)
     {
         /* Read once per boot, then clear, so the next reset reports only its own cause. */
         s_reset_cause = link_reset_cause(RCC->CSR);
         RCC->CSR |= RCC_CSR_RMVF;
         s_reset_cause_read = true;
+
+        /* A count above the limit can only be corrupt RAM: treat it like a
+         * missing magic. */
+        if (s_reset_cause == LINK_RESET_POWER_ON || s_clears_magic != LINK_CLEARS_MAGIC ||
+            s_clears_left > LINK_REMOTE_CLEARS)
+        {
+            s_clears_left = LINK_REMOTE_CLEARS;
+            s_last_fault = ERROR_NONE;
+            s_clears_magic = LINK_CLEARS_MAGIC;
+        }
+    }
+
+    if (active_fault != ERROR_NONE)
+    {
+        s_last_fault = active_fault; /* the fault loop's call: the code loaded at boot */
     }
 
     s_target_c = 0.0f;
@@ -140,9 +160,18 @@ void LinkApp_Service(uint8_t active_fault)
 
         if (s_regs.cmd.clear_approved)
         {
-            /* Remote fault clear is not wired up yet (fault-loop task). In the
-             * main loop active_fault is 0, so the policy never approves one. */
             s_regs.cmd.clear_approved = false;
+            /* Only the fault loop passes a fault, and the policy refuses a
+             * clear without one; checked again here because this path
+             * restarts the heater's normal boot. */
+            if (active_fault != ERROR_NONE && s_clears_left > 0U)
+            {
+                /* The reply is already fully on the wire: link_uart_send
+                 * returns only after TC. */
+                s_clears_left--;
+                ClearErrorCode();
+                NVIC_SystemReset(); /* DSB first, so the decrement is in RAM; does not return */
+            }
         }
     }
 

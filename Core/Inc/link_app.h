@@ -8,11 +8,18 @@
 #include <stdint.h>
 
 /* Reset cause (RCC_CSR is read and cleared on the first call only), safe
- * tracker, link state, target 0, USART1. Call after the ADC DMA start. */
+ * tracker, link state, target 0, USART1. Call after the ADC DMA start.
+ * The first call also re-arms the remote-clear counter and last_fault on a
+ * power-on reset (or missing magic); other resets keep them. The fault loop
+ * calls it again with the loaded fault code, which becomes last_fault;
+ * everywhere else active_fault is ERROR_NONE. */
 void LinkApp_Init(uint8_t active_fault);
 
 /* Every loop pass, main loop and fault loop: answers at most one frame and
- * runs the link hold timer. active_fault is ERROR_NONE in the main loop. */
+ * runs the link hold timer. active_fault is ERROR_NONE in the main loop and
+ * the loaded code in the fault loop. After the reply to an approved remote
+ * clear it does not return: it decrements the counter, clears the fault page
+ * (ClearErrorCode) and resets with NVIC_SystemReset. */
 void LinkApp_Service(uint8_t active_fault);
 
 /* Commanded air target in °C, 0 = off. */

@@ -293,9 +293,24 @@ int main(void)
 
     HAL_GPIO_WritePin(FAN_GPIO_Port, FAN_Pin, GPIO_PIN_SET);
 
+#if INPUT_MODE == INPUT_MODE_UART
+    // The link reports and may clear only 8-bit codes; a wider word in the fault
+    // page is corrupt, so report it as unknown (never remotely clearable) rather
+    // than truncate it into a clearable code.
+    uint8_t link_code = (code > 0xFFU) ? ERROR_UNKNOWN : (uint8_t)code;
+    LinkApp_Init(link_code);
+#endif
+
     IWDG->KR = 0xAAAA;
     while (HAL_GPIO_ReadPin(MODE_GPIO_Port, MODE_Pin) == GPIO_PIN_SET)
     {
+#if INPUT_MODE == INPUT_MODE_UART
+      // Heater held off; nothing in this loop applies a link target.
+      SetHeaterPWM(0.0f);
+      UpdateTemperatures();
+      // Does not return after an approved remote clear: the board resets.
+      LinkApp_Service(link_code);
+#endif
       Update_LEDs(code, fake_temp, 50);
       IWDG->KR = 0xAAAA;
     }
@@ -307,6 +322,12 @@ int main(void)
 
     ClearErrorCode();
     HAL_GPIO_WritePin(FAN_GPIO_Port, FAN_Pin, GPIO_PIN_RESET);
+
+#if INPUT_MODE == INPUT_MODE_UART
+    // Cleared locally: start the main loop from the same link state as a
+    // fault-free boot (target 0, no link seen), not the fault loop's.
+    LinkApp_Init(ERROR_NONE);
+#endif
   }
 
   reset_LEDs(10);
