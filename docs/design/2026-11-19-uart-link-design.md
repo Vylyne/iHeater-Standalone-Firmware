@@ -39,7 +39,10 @@ press at power-on.
 - Reflashing the STM32 over the link. v1 only reserves the
   `enter_bootloader` register for it (see the register map). The ROM
   bootloader's USART1 mode uses PA9/PA10, which are already on pins 17/18
-  with no remap; the rest is not investigated.
+  with no remap; the rest is not investigated. Whatever implements it must
+  keep the cool-down gate in the `enter_bootloader` row: the fan stops in
+  the ROM bootloader, so the board only enters it once the element is
+  cool.
 - Board revisions other than r1.1.
 
 ## Anti-goals
@@ -152,7 +155,7 @@ Control block, from 0x0100:
 |---|---|---|
 | 0x0100 | `air_target_cmd` | write: 0 = off, else `min_target`..`max_air_target` (tenths). Out of range → exception 0x03. Read: same as `air_target`. Rejected with 0x02 while a fault is latched. |
 | 0x0101 | `clear_fault` | write the fault code being cleared (must equal `active_fault`). See "Faults". Reads 0. |
-| 0x0102 | `enter_bootloader` | reserved for firmware updates over the link. Future meaning: write `0xB007` → heater off, reply, then jump to the ROM bootloader. v1: writes return exception 0x02. Reads 0. |
+| 0x0102 | `enter_bootloader` | reserved for firmware updates over the link. Future meaning: write `0xB007` → heater off, reply, then jump to the ROM bootloader. **Cool-down gate:** the ROM bootloader cannot run the fan, so the write is accepted only when `air_target` is 0, both heater and air thermistors are readable, and the heater element reads at or below a shutdown-safe temperature (proposed 50 °C, a `config.h` constant); otherwise exception 0x02. The Remote writes target 0 first and polls the element temperature until it is low enough. v1: writes return exception 0x02. Reads 0. |
 
 Settings block, from 0x0200. Read-only in v1: writes return exception 0x02.
 Values are the compiled-in `config.h` constants.
