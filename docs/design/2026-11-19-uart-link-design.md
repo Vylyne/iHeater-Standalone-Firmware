@@ -1,6 +1,6 @@
 # Two-way UART link to iHeater Remote — design
 
-Status: draft for approval · 2026-11-19
+Status: approved · 2026-11-19
 
 ## Intent
 
@@ -305,3 +305,18 @@ not a bare word, and a bad record falls back to the compiled defaults.
   check.
 - A Modbus test plan: a PC with a USB-serial adapter and a standard Modbus
   tool covers every register and exception before the Remote work starts.
+
+## Changes after approval
+
+- USART1 uses the single-sample bit method (`CR3.ONEBIT`): HSI48 is untrimmed
+  here, and ONEBIT raises the receiver's clock tolerance from about 3.3 % to
+  about 3.9 %.
+- The clear sequence verifies the erase. The order is decrement, clear the
+  flash, read the fault page back, reply, reset. If the page still holds the
+  fault, the reply is exception 0x04 for the same function code, the board does
+  not reset, and the clear stays spent.
+- `last_clear_result` is kept in `.noinit` with the clear counter and last
+  fault, so it persists across the clear reset (power-on re-arms it to 0).
+- `air_temp` (0x09) and `heater_temp` (0x0A) read `0x8000` when the reading is
+  not finite or at or below the open-circuit limits (`MIN_AIR_TEMP`,
+  `MIN_TEMP`), as `aux_temp` already did.

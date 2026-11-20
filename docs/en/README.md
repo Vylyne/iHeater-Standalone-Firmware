@@ -153,7 +153,7 @@ In the pulse build, the MODE button **does not cycle modes and does not trigger 
 
 ### Working with iHeater Remote (UART build)
 
-The `iheater_rev1_1_uart` build lets a Remote (an ESP module, a single-board computer, a USB serial adapter) drive iHeater over a Modbus RTU link on USART1. The Remote can set the chamber air temperature, read the state and both temperatures, and clear some faults. The image is limited to 30 KB (the last two flash pages hold the trigger calibration and the fault code); it is currently about 28.2 KB.
+The `iheater_rev1_1_uart` build lets a Remote (an ESP module, a single-board computer, a USB serial adapter) drive iHeater over a Modbus RTU link on USART1. The Remote can set the chamber air temperature, read the state and the air, heater and auxiliary (TH2) temperatures, and clear some faults. The image must stay under the 30 KB limit (the last two flash pages hold the trigger calibration and the fault code).
 
 #### Wiring
 
@@ -172,15 +172,21 @@ Cross the data lines: the Remote's TX goes to iHeater RX (D+), and the Remote's 
 
 !!! warning "Never connect or disconnect the link cable with power applied."
 
+!!! warning "Do not plug the UART build into a computer's USB port, except in DFU mode (BOOT held). The link drives D− and fights the host."
+
 Keep the heater thermistor on **TH0** and the air thermistor on **TH1**. The trigger feature is disabled in this build.
 
 #### Serial settings
 
-Modbus RTU, slave address 1, 115200 baud, 8N1. Function codes 03, 04, 06 and 10 are supported; errors are reported as exceptions 0x01 (function), 0x02 (address or state) and 0x03 (value). Frames for other addresses, frames with a bad CRC and function codes with bit 0x80 set get no reply. Temperatures on the wire are signed 16-bit tenths of °C; an unreadable sensor reads `0x8000`. The full register map is in [docs/design/2026-11-19-uart-link-design.md](../design/2026-11-19-uart-link-design.md).
+Modbus RTU, slave address 1, 115200 baud, 8N1. Function codes 03, 04, 06 and 10 are supported; errors are reported as exceptions 0x01 (function), 0x02 (address or state), 0x03 (value) and 0x04 (device failure, returned only when a remote clear cannot erase the fault). Frames for other addresses, frames with a bad CRC and function codes with bit 0x80 set get no reply. Temperatures on the wire are signed 16-bit tenths of °C; an unreadable sensor reads `0x8000`. The full register map is in [docs/design/2026-11-19-uart-link-design.md](../design/2026-11-19-uart-link-design.md).
 
 #### Hold behaviour
 
 At boot the target is 0 until the Remote writes one. After **3 s** without a valid frame iHeater enters hold and keeps the last target; **60 s** later (63 s after the last frame) the target drops to 0. This is not a fault, and heating restarts only on a new target.
+
+The link is silent for about 5 s after every boot, including the restart after a remote clear, so the Remote should retry. State 0 (booting) is never reported.
+
+The target register `0x0100` accepts 0 (off) or a value from 45 to 85 °C (`LINK_MIN_TARGET` to `LINK_MAX_TARGET`). Any other value is refused with exception 0x03. While a fault is latched every write to `0x0100` is refused with exception 0x02; the fault is checked first.
 
 #### LED indication
 
@@ -190,7 +196,7 @@ At boot the target is 0 until the Remote writes one. After **3 s** without a val
 | Idle (target 0) | LED1 solid, short LED3 flash on every answered frame |
 | Heating | chasing light, 500 ms step |
 | Hold (link silent) | all three blink together at 4 Hz |
-| Fault | the usual fault patterns, see "Error Handling" |
+| Fault | the usual fault patterns, see "Error Handling". Fault `0x08` (link lost) is raised only by the pulse build; if a stored `0x08` is present, the UART build shows LED1 blinking fast, the same as calibration step 1 |
 
 #### Faults and remote clearing
 
@@ -212,13 +218,13 @@ The table is the `FAULT_TABLE` in `config.h`. A fault stays latched until it is 
 - remote clears are left (3 per power cycle; a power cycle re-arms them);
 - the readings have been safe for 5 s: both thermistors valid, air at least 10 °C below `MAX_AIR_TEMP`, heater element at least 10 °C below `MAX_TEMP`.
 
-On success the board replies, clears the stored fault and restarts; the target is 0 after the restart. Holding MODE at power-on still clears a fault locally.
+On success the board clears the stored fault, checks that the fault page reads back as cleared, replies and restarts; the target is 0 after the restart, and `last_clear_result` reads 1. Holding MODE at power-on still clears a fault locally.
 
 Notes for the Remote side:
 
 - Clear with a single-register write (function 06). An FC 10 write that spans `0x0101` and later registers may clear the fault and restart the board even though the reply is an exception.
 - A multi-register write that is refused part-way keeps the registers written before the refusal. Re-read after any exception.
-- If the flash erase fails, the board has still replied with success; it restarts back into the fault with one clear used. Re-read the state after the restart.
+- A clear is replied to only after the fault page has been erased. If the erase fails, the reply is exception 0x04, the board does not restart and stays in the fault, and the clear is spent. After a successful clear, `last_clear_result` reads 1 after the restart.
 
 #### Bench probe
 
